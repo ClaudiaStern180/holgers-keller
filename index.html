@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Holgers Keller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Holgers Keller" />
+<meta name="theme-color" content="#2E1F17" />
+</head>
+<body>
+
+  <!-- LOGIN -->
+  <div id="login" class="login hidden">
+    <form id="login-form" class="login-box">
+      <img src="assets/logo.svg" alt="" class="login-logo" />
+      <h1>Holgers Keller</h1>
+      <p class="hint">Whisky, Spirituosen &amp; Wein</p>
+      <input id="login-email" type="email" placeholder="E-Mail" autocomplete="username" required />
+      <input id="login-pass" type="password" placeholder="Passwort" autocomplete="current-password" required />
+      <button type="submit" class="btn-primary">Anmelden</button>
+      <div id="login-error" class="login-error"></div>
+    </form>
+  </div>
+
+  <header class="topbar">
+    <div class="brand"><img src="assets/logo.svg" alt="" class="brand-logo" /> <span>Holgers Keller</span></div>
+    <div class="topbar-actions">
+      <button id="btn-add-bottle" class="btn-primary">+ Einlagern</button>
+      <button id="btn-logout" class="btn-ghost" title="Abmelden">⎋</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-tab="cellar">Bestand</button>
+    <button class="tab" data-tab="storage">Lagerorte</button>
+    <button class="tab" data-tab="stats">Statistiken</button>
+    <button class="tab" data-tab="tastings">Verkostungsnotizen</button>
+    <button class="tab" data-tab="flight">Verkostung planen</button>
+    <button class="tab" data-tab="archiv">🗂 Archiv</button>
+  </nav>
+
+  <main id="app">
+
+    <!-- BESTAND -->
+    <section id="view-cellar" class="view active">
+      <div class="toolbar">
+        <input id="search" type="text" placeholder="Suche nach Name, Hersteller, Region, Fassart..." />
+        <select id="filter-haupt">
+          <option value="">Wein &amp; Spirituosen</option>
+          <option value="Wein">Nur Wein</option>
+          <option value="Spirituose">Nur Spirituosen</option>
+        </select>
+        <select id="filter-kat"></select>
+        <select id="filter-ort"></select>
+      </div>
+      <div id="bottle-grid"></div>
+    </section>
+
+    <!-- LAGERORTE -->
+    <section id="view-storage" class="view">
+      <div class="section-header">
+        <h2>Lagerorte</h2>
+        <button id="btn-add-location" class="btn-primary small">+ Lagerort</button>
+      </div>
+      <p class="hint" style="margin-bottom:14px">Lagerorte legst du frei an (z. B. „Keller“, „Vitrine“, „Bar“). Welche Flasche wo steht, stellst du beim Bearbeiten der Flasche ein.</p>
+      <div id="storage-map"></div>
+    </section>
+
+    <!-- STATISTIKEN -->
+    <section id="view-stats" class="view">
+      <div id="stat-cards" class="stat-cards"></div>
+      <div id="stat-bars" class="stat-bars"></div>
+      <div id="stat-histogram" class="stat-histogram-wrap"></div>
+    </section>
+
+    <!-- VERKOSTUNGSNOTIZEN -->
+    <section id="view-tastings" class="view">
+      <div class="section-header">
+        <h2>Verkostungsnotizen</h2>
+        <button id="btn-add-tasting" class="btn-primary small">+ Notiz</button>
+      </div>
+      <div id="tastings-list"></div>
+    </section>
+
+    <!-- VERKOSTUNG PLANEN -->
+    <section id="view-flight" class="view">
+      <h2>Verkostung planen</h2>
+      <p class="hint">Tippe auf <b>+</b>, um einen Eintrag in die Reihenfolge zu übernehmen. Mit ▲ ▼ änderst du die Reihenfolge (am Rechner geht auch Ziehen per Maus).</p>
+      <div class="flight-layout">
+        <div class="flight-pool">
+          <h3>Mein Bestand</h3>
+          <div class="flight-filters">
+            <select id="flight-filter-kat"></select>
+          </div>
+          <div id="flight-pool-list" class="pool-list"></div>
+        </div>
+        <div class="flight-builder">
+          <h3>Reihenfolge</h3>
+          <input id="flight-title" type="text" placeholder="Titel (z. B. 'Islay-Abend')" />
+          <div id="flight-order-list" class="order-list"></div>
+          <div class="btn-col">
+            <button id="btn-save-flight" class="btn-primary">Verkostung speichern</button>
+            <button id="btn-generate-story" class="btn-primary btn-green hidden">✨ Story generieren</button>
+            <button id="btn-upload-story" class="btn-primary btn-gold hidden">📝 Eigene Story schreiben</button>
+            <button id="btn-clear-flight" class="btn-primary btn-light hidden">Auswahl leeren</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:32px">
+        <h3 class="serif">Gespeicherte Verkostungen</h3>
+        <div id="saved-flights-list"></div>
+      </div>
+    </section>
+
+    <!-- ARCHIV -->
+    <section id="view-archiv" class="view">
+      <div class="section-header"><h2>Archiv – Verbrauchtes</h2></div>
+      <div id="archiv-list"></div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: Einlagern / Bearbeiten -->
+  <div id="modal-bottle" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" data-close="modal-bottle">&times;</button>
+      <h2 id="bottle-modal-title">Neu einlagern</h2>
+      <form id="form-bottle" data-haupt="Spirituose">
+        <div class="form-grid">
+          <label class="fld span2"><span>Kategorie *</span><select name="kategorie" id="bf-kategorie" required></select></label>
+          <label class="fld span2"><span>Name *</span><input name="name" required placeholder="z. B. Lagavulin 16 / Barolo Riserva" /></label>
+          <label class="fld"><span id="lbl-produzent">Destillerie / Marke</span><input name="produzent" id="bf-produzent" /></label>
+          <label class="fld"><span id="lbl-jahrgang">Jahr</span><input name="jahrgang" type="number" inputmode="numeric" /></label>
+          <label class="fld only-spirit"><span>Alter (Jahre)</span><input name="alter_jahre" type="number" min="0" inputmode="numeric" /></label>
+          <label class="fld only-spirit"><span>Fassart</span><input name="fassart" placeholder="Sherry, Bourbon, …" /></label>
+          <label class="fld only-wein span2"><span>Rebsorte(n), Komma-getrennt</span><input name="rebsorte" /></label>
+          <label class="fld"><span>Land</span><input name="land" /></label>
+          <label class="fld"><span>Region</span><input name="region" /></label>
+          <label class="fld only-wein span2"><span>Appellation / Lage</span><input name="appellation" /></label>
+          <label class="fld"><span>Alkohol (% vol.)</span><input name="alkoholgehalt" type="number" step="0.1" inputmode="decimal" /></label>
+          <label class="fld"><span>Flaschengröße</span><select name="flaschengroesse_l" id="bf-groesse"></select></label>
+          <label class="fld only-spirit span2"><span>Füllstand (0,1-L-Schritte)</span><select name="fuellstand_l" id="bf-fuellstand"></select></label>
+          <label class="fld only-wein"><span>Anzahl Flaschen</span><input name="anzahl" type="number" min="0" value="1" inputmode="numeric" /></label>
+          <label class="fld only-spirit" id="fld-anzahl-neu"><span>Anzahl identischer Flaschen</span><input name="anzahl_neu" type="number" min="1" value="1" inputmode="numeric" /></label>
+          <label class="fld span2"><span>Lagerort</span><select name="location_id" id="bf-ort"></select></label>
+          <label class="fld"><span>Kaufdatum</span><input name="kaufdatum" type="date" /></label>
+          <label class="fld"><span>Kaufpreis (€ pro Flasche)</span><input name="kaufpreis" type="number" step="0.01" inputmode="decimal" /></label>
+          <label class="fld span2"><span>Händler / Bezugsquelle</span><input name="haendler" /></label>
+          <label class="fld only-wein"><span>Trinkfenster ab (Jahr)</span><input name="trink_ab" type="number" inputmode="numeric" /></label>
+          <label class="fld only-wein"><span>Trinkfenster bis (Jahr)</span><input name="trink_bis" type="number" inputmode="numeric" /></label>
+          <label class="fld only-wein span2"><span>Lagerpotenzial laut Hersteller</span><input name="lagerpotenzial" /></label>
+        </div>
+        <label class="fld"><span>Notizen</span><textarea name="notizen"></textarea></label>
+        <button type="submit" class="btn-primary">Speichern</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Detail -->
+  <div id="modal-detail" class="modal hidden">
+    <div class="modal-content" id="modal-detail-content"></div>
+  </div>
+
+  <!-- MODAL: Füllstand -->
+  <div id="modal-fill" class="modal hidden">
+    <div class="modal-content" style="max-width:420px">
+      <button class="modal-close" data-close="modal-fill">&times;</button>
+      <h2>Füllstand ändern</h2>
+      <div id="fill-name" class="hint" style="margin-bottom:12px"></div>
+      <label class="fld"><span>Neuer Füllstand</span><select id="fill-select"></select></label>
+      <label class="fld"><span>Anlass (optional)</span><input id="fill-anlass" placeholder="z. B. Abend mit Freunden" /></label>
+      <button id="btn-fill-save" class="btn-primary" style="width:100%">Speichern</button>
+    </div>
+  </div>
+
+  <!-- MODAL: Verkostungsnotiz -->
+  <div id="modal-tasting" class="modal hidden">
+    <div class="modal-content" style="max-width:600px">
+      <button class="modal-close" data-close="modal-tasting">&times;</button>
+      <h2 id="tasting-modal-title">Verkostungsnotiz</h2>
+      <form id="form-tasting">
+        <div class="box-sand">
+          <label class="fld"><span>Aus dem Bestand übernehmen (optional)</span><select id="tasting-from-cellar"></select></label>
+        </div>
+        <div class="form-grid">
+          <label class="fld span2"><span>Name *</span><input name="name" required /></label>
+          <label class="fld"><span>Hersteller</span><input name="produzent" /></label>
+          <label class="fld"><span>Kategorie</span><select name="kategorie" id="tf-kategorie"></select></label>
+          <label class="fld"><span>Jahr / Jahrgang</span><input name="jahrgang" type="number" inputmode="numeric" /></label>
+          <label class="fld"><span>Land</span><input name="land" /></label>
+          <label class="fld span2"><span>Region</span><input name="region" /></label>
+          <label class="fld"><span>Datum *</span><input name="verkostungsdatum" type="date" required /></label>
+          <label class="fld"><span>Anlass</span><input name="anlass" placeholder="Bar, Abendessen, …" /></label>
+          <label class="fld"><span>Preis (€)</span><input name="kaufpreis" type="number" step="0.01" inputmode="decimal" /></label>
+          <label class="fld"><span>Händler</span><input name="haendler" /></label>
+        </div>
+        <div class="stars-row">
+          <span class="stars-label">Bewertung:</span>
+          <div class="star-picker" id="star-picker">
+            <span class="star" data-val="1">★</span><span class="star" data-val="2">★</span><span class="star" data-val="3">★</span><span class="star" data-val="4">★</span><span class="star" data-val="5">★</span>
+          </div>
+          <input type="hidden" name="bewertung" id="tasting-bewertung-val" />
+        </div>
+        <label class="fld"><span>Nase</span><textarea name="nase" class="short"></textarea></label>
+        <label class="fld"><span>Gaumen</span><textarea name="gaumen" class="short"></textarea></label>
+        <label class="fld"><span>Abgang</span><textarea name="abgang" class="short"></textarea></label>
+        <label class="fld"><span>Gesamteindruck / Notizen</span><textarea name="notizen"></textarea></label>
+        <button type="submit" class="btn-primary">Notiz speichern</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: Story -->
+  <div id="modal-story" class="modal hidden">
+    <div class="modal-content story-content">
+      <div class="story-head">
+        <div>
+          <div class="story-title" id="story-title">Verkostung</div>
+          <div class="story-progress" id="story-progress"></div>
+        </div>
+        <button class="story-x" data-close="modal-story">✕</button>
+      </div>
+      <div id="story-content" class="story-body"></div>
+      <div class="story-foot">
+        <button id="story-prev" class="btn-primary btn-dark" style="flex:1">← Zurück</button>
+        <button id="story-next" class="btn-primary" style="flex:1">Weiter →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Eigene Story -->
+  <div id="modal-upload-story" class="modal hidden">
+    <div class="modal-content" style="max-width:620px">
+      <button class="modal-close" data-close="modal-upload-story">&times;</button>
+      <h2>Eigene Story schreiben</h2>
+      <p class="hint" style="margin-bottom:14px">Selbst geschrieben oder aus einem anderen Chat eingefügt – sie lässt sich danach genauso durchblättern wie die KI-Story.</p>
+      <label class="fld"><span>Einleitung</span><textarea id="custom-einleitung" class="short"></textarea></label>
+      <div id="custom-wine-fields"></div>
+      <label class="fld"><span>Abschluss</span><textarea id="custom-abschluss" class="short"></textarea></label>
+      <div class="btn-row">
+        <button id="btn-save-custom-story" class="btn-primary" style="flex:1">💾 Speichern</button>
+        <button id="btn-preview-custom-story" class="btn-primary btn-dark" style="flex:1">👁 Vorschau</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
