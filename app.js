@@ -44,6 +44,11 @@ const bottleById = id => allBottles.find(b => b.id === id);
 const isSpirit = b => b.hauptkategorie === 'Spirituose';
 const color = b => kategorieFarben[b.kategorie] || '#7B2D3E';
 
+const BUCKET = 'etiketten';
+const photoUrl = path => supabaseClient.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+const photoOf = (b, typ) => (b.bottle_photos || []).find(p => p.typ === typ);
+const thumbOf = b => { const p = photoOf(b, 'etikett') || (b.bottle_photos || [])[0]; return p ? photoUrl(p.storage_path) : null; };
+
 function openModal(id) { $(id).classList.remove('hidden'); }
 function closeModal(id) { $(id).classList.add('hidden'); }
 document.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => closeModal(btn.dataset.close)));
@@ -144,7 +149,7 @@ async function loadLocations() {
   allLocations = data || [];
 }
 async function loadBottles() {
-  const { data, error } = await supabaseClient.from('bottles').select('*').order('created_at', { ascending: false });
+  const { data, error } = await supabaseClient.from('bottles').select('*, bottle_photos(storage_path, typ)').order('created_at', { ascending: false });
   if (error) { console.error(error); alert('Bestand konnte nicht geladen werden: ' + error.message); return; }
   allBottles = data || [];
   renderAll();
@@ -195,6 +200,7 @@ function sizeBadge(b) {
 function cardHtml(b) {
   const spirit = isSpirit(b);
   const inFlight = flightIds.includes(b.id);
+  const thumb = thumbOf(b);
   let mid;
   if (spirit) {
     const offen = fillPct(b) < 100;
@@ -206,6 +212,7 @@ function cardHtml(b) {
   return `
   <div class="bottle-card" onclick="showDetail('${b.id}')">
     <div class="bottle-card-top">
+      ${thumb ? `<img src="${thumb}" class="bottle-thumb" alt="" loading="lazy" />` : ''}
       <div style="flex:1;min-width:0">
         <div class="bottle-name">${esc(b.name)}${sizeBadge(b)}</div>
         <div class="bottle-sub">${esc(subline(b))}</div>
@@ -315,6 +322,10 @@ window.showDetail = function (id) {
     ['Kaufpreis', preis], ['Kaufdatum', b.kaufdatum], ['Händler', b.haendler]
   ];
   const leer = b.anzahl <= 0;
+  const vorne = photoOf(b, 'etikett'), hinten = photoOf(b, 'rueckseite');
+  const fotos = (vorne || hinten) ? `<div class="detail-photos">${[vorne, hinten].map(p => `<div>${p
+    ? `<a href="${photoUrl(p.storage_path)}" target="_blank" rel="noopener"><img src="${photoUrl(p.storage_path)}" alt="Etikett" /></a>`
+    : '<span class="hint" style="margin:0">Kein Foto</span>'}</div>`).join('')}</div>` : '';
   const aktion = leer ? '' : spirit
     ? `<button onclick="openFill('${b.id}')" class="btn-primary btn-green" style="flex:1">🥃 Füllstand</button>`
     : `<button onclick="auslagernBottle('${b.id}')" class="btn-primary btn-green" style="flex:1">🍷 Auslagern</button>`;
@@ -327,6 +338,7 @@ window.showDetail = function (id) {
     ${spirit && !leer ? `<div style="margin-top:10px">${fillHtml(b)}</div>` : ''}
     <div class="detail-grid">${detailRows(rows)}</div>
     ${b.notizen ? `<div class="note-box"><b>Notizen:</b> ${esc(b.notizen)}</div>` : ''}
+    ${fotos}
     <div class="btn-row">
       <button onclick="editBottle('${b.id}')" class="btn-primary btn-dark" style="flex:1">Bearbeiten</button>
       ${aktion}
@@ -388,8 +400,10 @@ $('btn-fill-save').addEventListener('click', async () => {
 window.deleteBottle = async function (id) {
   const b = bottleById(id);
   if (!confirm(`„${b?.name}“ wirklich endgültig löschen?`)) return;
+  const paths = (b?.bottle_photos || []).map(p => p.storage_path);
   const { error } = await supabaseClient.from('bottles').delete().eq('id', id);
   if (error) { alert('Fehler beim Löschen: ' + error.message); return; }
+  removeUnreferenced(paths).catch(console.error);
   flightIds = flightIds.filter(x => x !== id);
   closeModal('modal-detail');
   loadBottles();
@@ -427,9 +441,129 @@ $('bf-groesse').addEventListener('change', () => {
   refreshFuellstand(wasFull ? NaN : parseFloat($('bf-fuellstand').value));
 });
 
+// ---------- Etiketten-Fotos & KI-Auslesen ----------
+function setupPhotoPreview(inputId, previewId) {
+  $(inputId).addEventListener('change', e => {
+    const file = e.target.files[0];
+    const img = $(previewId);
+    if (!file) { img.classList.add('hidden'); return; }
+    img.src = URL.createObjectURL(file);
+    img.classList.remove('hidden');
+  });
+}
+setupPhotoPreview('foto-vorne', 'preview-vorne');
+setupPhotoPreview('foto-hinten', 'preview-hinten');
+
+// Große Handy-/iPad-Fotos verkleinern und als JPEG liefern
+function resizeToBlob(file, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('Bild konnte nicht verarbeitet werden')), 'image/jpeg', quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Bild konnte nicht gelesen werden')); };
+    img.src = url;
+  });
+}
+const blobToBase64 = blob => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(String(r.result).split(',')[1]);
+  r.onerror = rej;
+  r.readAsDataURL(blob);
+});
+
+function applyScan(r) {
+  const el = $('form-bottle').elements;
+  if (r.kategorie && ALLE_KATEGORIEN.includes(r.kategorie)) {
+    $('bf-kategorie').value = r.kategorie;
+    setFormHaupt(hauptVon(r.kategorie));
+  }
+  const fill = (name, v) => { if (v != null && v !== '' && !el[name].value) el[name].value = v; };
+  fill('name', r.name); fill('produzent', r.produzent); fill('jahrgang', r.jahrgang); fill('alter_jahre', r.alter_jahre);
+  fill('rebsorte', Array.isArray(r.rebsorten) ? r.rebsorten.join(', ') : r.rebsorten);
+  fill('land', r.land); fill('region', r.region); fill('appellation', r.appellation); fill('fassart', r.fassart);
+  fill('alkoholgehalt', r.alkoholgehalt); fill('trink_ab', r.trink_ab); fill('trink_bis', r.trink_bis);
+  fill('lagerpotenzial', r.lagerpotenzial);
+  const vol = num(r.flaschengroesse_l);
+  if (vol && vol > 0 && vol <= 6) {
+    const wasFull = $('bf-fuellstand').selectedIndex <= 0;
+    ensureOption(el.flaschengroesse_l, vol, fmtL(vol));
+    el.flaschengroesse_l.value = String(vol);
+    refreshFuellstand(wasFull ? NaN : parseFloat($('bf-fuellstand').value));
+  }
+  // Preisschätzung nur als Hinweis, nicht als Wert (sonst verfälscht sie die Statistik)
+  if (r.geschaetzter_preis && !el.kaufpreis.value) el.kaufpreis.placeholder = `ca. ${r.geschaetzter_preis} € (geschätzt)`;
+}
+
+$('btn-ki-scan').addEventListener('click', async () => {
+  const files = [$('foto-vorne').files[0], $('foto-hinten').files[0]].filter(Boolean);
+  if (!files.length) { alert('Bitte zuerst mindestens ein Etikettenfoto aufnehmen oder auswählen.'); return; }
+  const status = $('ki-status'), btn = $('btn-ki-scan');
+  status.textContent = '⏳ Etikett wird ausgelesen…';
+  btn.disabled = true;
+  try {
+    const images = [];
+    for (const f of files) images.push({ media_type: 'image/jpeg', data: await blobToBase64(await resizeToBlob(f, 1200, 0.8)) });
+    const res = await fetch('/api/recognize-label', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ images })
+    });
+    const r = await res.json().catch(() => ({ error: 'Serverfehler (' + res.status + ')' }));
+    if (!res.ok || r.error) throw new Error(r.error || 'Fehler ' + res.status);
+    applyScan(r);
+    status.textContent = '✓ Ausgelesen – bitte kurz prüfen.';
+  } catch (err) {
+    console.error(err);
+    status.textContent = '⚠️ ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// Nur Dateien löschen, auf die keine Flasche mehr verweist
+async function removeUnreferenced(paths) {
+  const gone = [];
+  for (const p of [...new Set(paths.filter(Boolean))]) {
+    const { data } = await supabaseClient.from('bottle_photos').select('id').eq('storage_path', p);
+    if (!data || !data.length) gone.push(p);
+  }
+  if (gone.length) await supabaseClient.storage.from(BUCKET).remove(gone);
+}
+
+async function savePhotos(ids, editing) {
+  for (const [inputId, typ] of [['foto-vorne', 'etikett'], ['foto-hinten', 'rueckseite']]) {
+    const file = $(inputId).files[0];
+    if (!file) continue;
+    const blob = await resizeToBlob(file);
+    const path = `${ids[0]}/${typ}-${Date.now()}.jpg`;
+    const { error: upErr } = await supabaseClient.storage.from(BUCKET).upload(path, blob, { contentType: 'image/jpeg' });
+    if (upErr) throw upErr;
+    let oldPaths = [];
+    if (editing) {
+      oldPaths = (bottleById(ids[0])?.bottle_photos || []).filter(p => p.typ === typ).map(p => p.storage_path);
+      await supabaseClient.from('bottle_photos').delete().eq('bottle_id', ids[0]).eq('typ', typ);
+    }
+    const { error: dbErr } = await supabaseClient.from('bottle_photos').insert(ids.map(id => ({ bottle_id: id, storage_path: path, typ })));
+    if (dbErr) throw dbErr;
+    await removeUnreferenced(oldPaths);
+  }
+}
+
 function openBottleForm(b) {
   const form = $('form-bottle');
   form.reset();
+  ['preview-vorne', 'preview-hinten'].forEach(id => $(id).classList.add('hidden'));
+  $('ki-status').textContent = '';
+  form.elements.kaufpreis.placeholder = '';
+  $('photo-edit-hint').classList.toggle('hidden', !b || !(b.bottle_photos || []).length);
   editingBottleId = b ? b.id : null;
   $('bottle-modal-title').textContent = b ? 'Bearbeiten' : 'Neu einlagern';
   $('fld-anzahl-neu').classList.toggle('hidden', !!b);
@@ -506,13 +640,21 @@ $('form-bottle').addEventListener('submit', async e => {
   };
   payload.anzahl = wein ? Math.max(0, parseInt(f.get('anzahl'), 10) || 0) : (payload.fuellstand_l > 0 ? 1 : 0);
 
-  let error;
-  if (editingBottleId) {
+  let error, ids = [];
+  const editing = !!editingBottleId;
+  if (editing) {
     ({ error } = await supabaseClient.from('bottles').update(payload).eq('id', editingBottleId));
+    ids = [editingBottleId];
   } else {
     const n = wein ? 1 : Math.max(1, Math.min(50, parseInt(f.get('anzahl_neu'), 10) || 1));
     if (wein && payload.anzahl < 1) payload.anzahl = 1;
-    ({ error } = await supabaseClient.from('bottles').insert(Array.from({ length: n }, () => ({ ...payload }))));
+    let inserted;
+    ({ data: inserted, error } = await supabaseClient.from('bottles').insert(Array.from({ length: n }, () => ({ ...payload }))).select());
+    ids = (inserted || []).map(x => x.id);
+  }
+  if (!error && ids.length) {
+    try { await savePhotos(ids, editing); }
+    catch (err) { console.error(err); alert('Gespeichert, aber das Foto konnte nicht hochgeladen werden: ' + (err.message || err)); }
   }
   btn.disabled = false; btn.textContent = 'Speichern';
   if (error) { alert('Fehler beim Speichern: ' + error.message); return; }

@@ -137,6 +137,21 @@
       <button class="modal-close" data-close="modal-bottle">&times;</button>
       <h2 id="bottle-modal-title">Neu einlagern</h2>
       <form id="form-bottle" data-haupt="Spirituose">
+        <div class="photo-upload-row">
+          <div class="photo-upload-box">
+            <label for="foto-vorne">Etikett vorne</label>
+            <input type="file" id="foto-vorne" accept="image/*" />
+            <img id="preview-vorne" class="photo-preview hidden" alt="" />
+          </div>
+          <div class="photo-upload-box">
+            <label for="foto-hinten">Etikett hinten</label>
+            <input type="file" id="foto-hinten" accept="image/*" />
+            <img id="preview-hinten" class="photo-preview hidden" alt="" />
+          </div>
+        </div>
+        <div id="photo-edit-hint" class="hint hidden">Ein neues Foto ersetzt das vorhandene.</div>
+        <button type="button" id="btn-ki-scan" class="btn-primary btn-dark" style="width:100%">✨ Mit KI auslesen</button>
+        <div id="ki-status" class="hint" style="margin:6px 0 14px"></div>
         <div class="form-grid">
           <label class="fld span2"><span>Kategorie *</span><select name="kategorie" id="bf-kategorie" required></select></label>
           <label class="fld span2"><span>Name *</span><input name="name" required placeholder="z. B. Lagavulin 16 / Barolo Riserva" /></label>
