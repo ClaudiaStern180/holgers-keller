@@ -2,6 +2,14 @@
 // HOLGERS KELLER — Whisky, Spirituosen & Wein
 // ============================================================
 
+// Ohne Datenbank-Verbindung läuft nichts – dann lieber eine klare Meldung statt einer leeren Seite.
+let clientOk = true;
+try { void supabaseClient; } catch (e) { clientOk = false; }
+if (!clientOk) {
+  document.body.innerHTML = '<div style="padding:32px;font-family:sans-serif;max-width:560px;margin:auto"><h2>Verbindung zur Datenbank fehlt</h2><p>Die Supabase-Bibliothek oder die Datei <b>config.js</b> konnte nicht geladen werden. Bitte <b>config.js</b> prüfen (URL und Key in Anführungszeichen, keine Tippfehler) und die Seite neu laden.</p></div>';
+  throw new Error('supabaseClient fehlt');
+}
+
 const KATEGORIEN = {
   Wein: ['Rotwein', 'Weißwein', 'Rosé', 'Schaumwein', 'Süßwein'],
   Spirituose: ['Whisky', 'Rum', 'Gin', 'Cognac & Brandy', 'Vodka', 'Tequila & Mezcal', 'Likör', 'Sonstige Spirituosen']
