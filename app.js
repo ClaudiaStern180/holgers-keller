@@ -269,7 +269,17 @@ function renderCellar() {
     const list = [...filtered];
     const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
     if (sortMode === 'name') list.sort(byName);
-    else {
+    else if (sortMode.startsWith('fuell')) {
+      // nur Spirituosen haben einen Füllstand; Wein steht am Ende
+      const dir = sortMode === 'fuell-asc' ? 1 : -1;
+      list.sort((a, b) => {
+        const sa = isSpirit(a), sb = isSpirit(b);
+        if (!sa && !sb) return byName(a, b);
+        if (!sa) return 1;
+        if (!sb) return -1;
+        return (fillPct(a) - fillPct(b)) * dir || byName(a, b);
+      });
+    } else {
       const dir = sortMode === 'preis-asc' ? 1 : -1;
       list.sort((a, b) => {
         const pa = preisWert(a), pb = preisWert(b);
