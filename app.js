@@ -858,14 +858,31 @@ function showStatDetail(label, bottles) {
 function renderStats() {
   const stock = allBottles.filter(b => b.anzahl > 0);
   const flaschen = stock.reduce((s, b) => s + b.anzahl, 0);
-  const wert = stock.reduce((s, b) => s + b.anzahl * (b.kaufpreis || 0), 0);
-  const avg = flaschen ? (wert / flaschen).toFixed(2) : '0.00';
+  // Bestandswert: Marktpreis (aktuell), sonst Kaufpreis; Spirituosen anteilig nach Füllstand.
+  // Flaschen ganz ohne Preis werden mit dem Ø ihrer Kategorie geschätzt (separat ausgewiesen).
+  const anteil = b => isSpirit(b) ? Math.min(1, Math.max(0, Number(b.fuellstand_l ?? b.flaschengroesse_l ?? 0) / (Number(b.flaschengroesse_l) || 0.7))) : 1;
+  const preisFlasche = b => { const p = preisWert(b); return p != null && p > 0 ? p : null; };
+  const mitPreis = stock.filter(b => preisFlasche(b) != null);
+  const ohnePreis = stock.filter(b => preisFlasche(b) == null);
+  const wertBekannt = mitPreis.reduce((s, b) => s + b.anzahl * preisFlasche(b) * anteil(b), 0);
+  const kaufwert = stock.reduce((s, b) => s + b.anzahl * (b.kaufpreis || 0) * anteil(b), 0);
+  const nMit = mitPreis.reduce((s, b) => s + b.anzahl, 0);
+  const avgAll = nMit ? mitPreis.reduce((s, b) => s + b.anzahl * preisFlasche(b), 0) / nMit : 0;
+  const avgKat = {};
+  mitPreis.forEach(b => { const k = b.kategorie || '–'; (avgKat[k] = avgKat[k] || { n: 0, sum: 0 }); avgKat[k].n += b.anzahl; avgKat[k].sum += b.anzahl * preisFlasche(b); });
+  const wertGeschaetzt = ohnePreis.reduce((s, b) => { const k = avgKat[b.kategorie || '–']; return s + b.anzahl * (k ? k.sum / k.n : avgAll) * anteil(b); }, 0);
+  const nOhne = ohnePreis.reduce((s, b) => s + b.anzahl, 0);
+  const wert = wertBekannt + wertGeschaetzt;
+  const avg = nMit ? avgAll.toFixed(2) : '0.00';
   const vorrat = stock.filter(isSpirit).reduce((s, b) => s + Number(b.fuellstand_l ?? b.flaschengroesse_l ?? 0), 0);
+  const sub = t => `<div style="font-size:11px;color:var(--muted);margin-top:4px">${t}</div>`;
 
   $('stat-cards').innerHTML = `
     <div class="stat-card"><div class="label">Flaschen</div><div class="value">${flaschen}</div></div>
-    <div class="stat-card"><div class="label">Bestandswert</div><div class="value">€ ${wert.toFixed(0)}</div></div>
-    <div class="stat-card"><div class="label">Ø Preis/Flasche</div><div class="value">€ ${avg}</div></div>
+    <div class="stat-card"><div class="label">Bestandswert (aktuell)</div><div class="value">€ ${Math.round(wert).toLocaleString('de-DE')}</div>
+      ${sub(`Marktpreis, sonst Kaufpreis: € ${Math.round(wertBekannt).toLocaleString('de-DE')}` + (nOhne ? `<br>+ ca. € ${Math.round(wertGeschaetzt).toLocaleString('de-DE')} geschätzt für ${nOhne} Fl. ohne Preis` : ''))}</div>
+    <div class="stat-card"><div class="label">Kaufwert</div><div class="value">€ ${Math.round(kaufwert).toLocaleString('de-DE')}</div>${sub('nach Einkaufspreisen')}</div>
+    <div class="stat-card"><div class="label">Ø Preis/Flasche</div><div class="value">€ ${avg}</div>${sub(`über ${nMit} Fl. mit Preis`)}</div>
     <div class="stat-card"><div class="label">Verschiedene</div><div class="value">${stock.length}</div></div>
     <div class="stat-card"><div class="label">Spirituosen-Vorrat</div><div class="value">${round2(vorrat).toString().replace('.', ',')} L</div></div>`;
 
@@ -894,16 +911,16 @@ function renderStats() {
   }));
 
   // Preis-Histogramm
-  const priced = stock.filter(b => b.kaufpreis > 0);
+  const priced = stock.filter(b => preisFlasche(b) != null);
   const hist = $('stat-histogram');
   if (!priced.length) { hist.innerHTML = ''; return; }
   const buckets = [['< 20 €', 0, 20], ['20–40 €', 20, 40], ['40–60 €', 40, 60], ['60–100 €', 60, 100], ['100–200 €', 100, 200], ['> 200 €', 200, Infinity]]
     .map(([label, min, max]) => {
-      const bottles = priced.filter(b => b.kaufpreis >= min && b.kaufpreis < max);
+      const bottles = priced.filter(b => preisFlasche(b) >= min && preisFlasche(b) < max);
       return { label, bottles, count: bottles.reduce((s, b) => s + b.anzahl, 0) };
     }).filter(b => b.count > 0);
   const maxC = Math.max(...buckets.map(b => b.count), 1);
-  hist.innerHTML = `<div style="font-size:13px;font-weight:700;margin-bottom:14px">Preisverteilung (Flaschen)</div>
+  hist.innerHTML = `<div style="font-size:13px;font-weight:700;margin-bottom:14px">Preisverteilung (Flaschen, Marktpreis sonst Kaufpreis)</div>
     <div class="histogram">${buckets.map((bk, i) => `
       <div class="hist-col" data-h="${i}">
         <div class="hist-count">${bk.count}</div>
