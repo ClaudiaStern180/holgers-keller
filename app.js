@@ -911,13 +911,30 @@ function renderWertTabelle(stock, katOf, mount) {
   }));
 }
 
+// Liste der Flaschen hinter einem Balken
+function showPeriodDetail(title, rows) {
+  const sorted = [...rows].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  document.getElementById('modal-detail-content').innerHTML = `
+    <button class="modal-close" onclick="closeModal('modal-detail')">&times;</button>
+    <h2 style="margin-bottom:4px">${esc(title)}</h2>
+    <div class="hint" style="margin-bottom:12px">${sorted.length} Einträge – antippen für Details</div>
+    <div style="display:flex;flex-direction:column;gap:8px">${sorted.map(r => `
+      <div class="bottle-card" style="cursor:pointer" onclick="showDetail('${r.b.id}')">
+        <div style="display:flex;justify-content:space-between;gap:10px">
+          <div style="min-width:0"><div style="font-weight:600">${esc(r.b.name)}${r.b.jahrgang ? ` <span style="color:var(--muted);font-weight:400">· ${esc(r.b.jahrgang)}</span>` : ''}</div>
+            <div style="font-size:12px;color:var(--muted)">${esc(r.sub || '')}${r.anlass ? ' · 📌 ' + esc(r.anlass) : ''}</div></div>
+          <div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:600">${esc(r.text)}</div><div style="font-size:12px;color:var(--muted)">${esc(r.date || '')}</div></div>
+        </div></div>`).join('') || '<p class="hint">Keine Einträge.</p>'}</div>`;
+  openModal('modal-detail');
+}
+
 // ---------- Verbrauch pro Zeiteinheit ----------
 let verbrauchOpts = { zeit: 'monat12', mass: 'flaschen' };
 const MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 async function renderVerbrauch() {
   const el = document.getElementById('stat-verbrauch');
   if (!el) return;
-  const { data: logs, error } = await supabaseClient.from('consumption_log').select('bottle_id, anzahl, menge_l, consumed_at');
+  const { data: logs, error } = await supabaseClient.from('consumption_log').select('bottle_id, anzahl, menge_l, consumed_at, anlass');
   if (error) { el.innerHTML = ''; return; }
   const byId = Object.fromEntries(allBottles.map(b => [b.id, b]));
   // je Eintrag: Flaschen(-Äquivalent) und Wert
@@ -926,7 +943,8 @@ async function renderVerbrauch() {
     const sp = isSpirit(b);
     const fl = sp && l.menge_l != null ? Number(l.menge_l) / (Number(b.flaschengroesse_l) || 0.7) : (l.anzahl || 0);
     const p = preisWert(b);
-    return { key: l.consumed_at.slice(0, 7), jahr: l.consumed_at.slice(0, 4), sp, fl, wert: p != null ? fl * p : 0 };
+    return { key: l.consumed_at.slice(0, 7), jahr: l.consumed_at.slice(0, 4), sp, fl, wert: p != null ? fl * p : 0,
+      row: { b, date: l.consumed_at, anlass: l.anlass, text: l.menge_l != null ? fmtL(l.menge_l) : l.anzahl + '×', sub: (sp ? (b.kategorie || '') : (b.weintyp || b.kategorie || '')) } };
   });
   const o = verbrauchOpts;
   const now = new Date();
@@ -949,6 +967,7 @@ async function renderVerbrauch() {
     bk.wein = its.filter(i => !i.sp).reduce((s, i) => s + val(i), 0);
     bk.spirit = its.filter(i => i.sp).reduce((s, i) => s + val(i), 0);
     bk.sum = bk.wein + bk.spirit;
+    bk.rows = its.map(i => i.row);
   });
   const total = buckets.reduce((s, b) => s + b.sum, 0);
   const avg = buckets.length ? total / buckets.length : 0;
@@ -965,7 +984,7 @@ async function renderVerbrauch() {
     </div>
     <div class="vb-summary">Ø ${fmt(avg)} pro ${einheit} · Summe ${fmt(total)}${o.mass === 'flaschen' ? ' Flaschen' : ''}</div>
     <div class="vb-chart">${buckets.map(b => `
-      <div class="vb-col" title="${esc(b.label)}: Wein ${fmt(b.wein)} · Spirituosen ${fmt(b.spirit)}">
+      <div class="vb-col" data-bk="${esc(b.key)}" style="cursor:pointer" title="${esc(b.label)}: Wein ${fmt(b.wein)} · Spirituosen ${fmt(b.spirit)}">
         <div class="vb-val">${b.sum > 0 ? fmt(b.sum) : ''}</div>
         <div class="vb-bar-wrap"><div class="vb-bar">
           <div style="height:${(b.spirit / max) * 120}px;background:#B7762C"></div>
@@ -974,7 +993,11 @@ async function renderVerbrauch() {
         <div class="vb-label">${esc(b.label)}</div>
       </div>`).join('')}</div>
     <div class="vb-legend"><span><i style="background:#7B2D3E"></i>Wein</span><span><i style="background:#B7762C"></i>Spirituosen</span>
-      ${o.mass === 'wert' ? '<span>Wert = Marktpreis, sonst Kaufpreis</span>' : '<span>Spirituosen als Flaschen-Äquivalent (Liter ÷ Flaschengröße)</span>'}</div>`;
+      ${o.mass === 'wert' ? '<span>Wert = Marktpreis, sonst Kaufpreis</span>' : '<span>Spirituosen als Flaschen-Äquivalent (Liter ÷ Flaschengröße)</span>'}<span>Balken antippen = Flaschen anzeigen</span></div>`;
+  el.querySelectorAll('.vb-col').forEach(col => col.addEventListener('click', () => {
+    const bk = buckets.find(x => x.key === col.dataset.bk);
+    if (bk) showPeriodDetail('Verbrauch ' + bk.label, bk.rows);
+  }));
   el.querySelector('#vb-zeit').value = o.zeit;
   el.querySelector('#vb-mass').value = o.mass;
   el.querySelector('#vb-zeit').addEventListener('change', e => { verbrauchOpts.zeit = e.target.value; renderVerbrauch(); });
@@ -986,7 +1009,7 @@ let bestandOpts = { zeit: 'monat12' };
 async function renderBestandChart() {
   const el = document.getElementById('stat-bestand');
   if (!el) return;
-  const { data: logs, error } = await supabaseClient.from('consumption_log').select('bottle_id, anzahl, consumed_at');
+  const { data: logs, error } = await supabaseClient.from('consumption_log').select('bottle_id, anzahl, menge_l, consumed_at, anlass');
   if (error) { el.innerHTML = ''; return; }
   const byId = Object.fromEntries(allBottles.map(b => [b.id, b]));
   const abgangLog = (logs || []).filter(l => l.consumed_at && byId[l.bottle_id] && l.anzahl > 0);
@@ -997,9 +1020,9 @@ async function renderBestandChart() {
   allBottles.forEach(b => {
     const n = (b.anzahl || 0) + (verbraucht[b.id] || 0);
     const d = b.kaufdatum || (b.created_at || '').slice(0, 10);
-    if (n > 0 && d) events.push({ d, zu: n, ab: 0 });
+    if (n > 0 && d) events.push({ d, zu: n, ab: 0, row: { b, date: d, text: '+' + n + '×', sub: b.kategorie || b.weintyp || '' } });
   });
-  abgangLog.forEach(l => events.push({ d: l.consumed_at, zu: 0, ab: l.anzahl }));
+  abgangLog.forEach(l => events.push({ d: l.consumed_at, zu: 0, ab: l.anzahl, row: { b: byId[l.bottle_id], date: l.consumed_at, anlass: l.anlass, text: '−' + l.anzahl + '×', sub: byId[l.bottle_id].kategorie || byId[l.bottle_id].weintyp || '' } }));
   const o = bestandOpts, now = new Date();
   const keyOf = o.zeit === 'jahr' ? (d => d.slice(0, 4)) : (d => d.slice(0, 7));
   const buckets = [];
@@ -1018,6 +1041,7 @@ async function renderBestandChart() {
     const ev = events.filter(e => keyOf(e.d) === bk.key);
     bk.zu = ev.reduce((s, e) => s + e.zu, 0); bk.ab = ev.reduce((s, e) => s + e.ab, 0);
     stand += bk.zu - bk.ab; bk.stand = stand;
+    bk.zuRows = ev.filter(e => e.zu).map(e => e.row); bk.abRows = ev.filter(e => e.ab).map(e => e.row);
   });
   const max = Math.max(...buckets.flatMap(b => [b.zu, b.ab]), 1);
   const sumZu = buckets.reduce((s, b) => s + b.zu, 0), sumAb = buckets.reduce((s, b) => s + b.ab, 0);
@@ -1029,16 +1053,22 @@ async function renderBestandChart() {
     </div>
     <div class="vb-summary">Im Zeitraum: <b style="color:#5C7A4F">+${sumZu} Zugang</b> · <b style="color:#9B3B3B">−${sumAb} Abgang</b> · Netto <b>${netto >= 0 ? '+' : ''}${netto}</b> · Bestand am Ende: <b>${buckets[buckets.length - 1].stand}</b> Fl.</div>
     <div class="vb-chart">${buckets.map(b => `
-      <div class="vb-col" title="${esc(b.label)}: +${b.zu} / −${b.ab} · Bestand ${b.stand}">
+      <div class="vb-col" data-bk="${esc(b.key)}" title="${esc(b.label)}: +${b.zu} / −${b.ab} · Bestand ${b.stand}">
         <div class="vb-val" style="font-size:10px">${b.stand}</div>
         <div class="vb-bar-wrap" style="gap:2px">
-          <div class="vb-bar" style="width:38%;max-width:16px"><div style="height:${(b.zu / max) * 110}px;background:#5C7A4F"></div></div>
-          <div class="vb-bar" style="width:38%;max-width:16px"><div style="height:${(b.ab / max) * 110}px;background:#9B3B3B"></div></div>
+          <div class="vb-bar" data-art="zu" style="width:38%;max-width:16px;cursor:pointer"><div style="height:${(b.zu / max) * 110}px;background:#5C7A4F"></div></div>
+          <div class="vb-bar" data-art="ab" style="width:38%;max-width:16px;cursor:pointer"><div style="height:${(b.ab / max) * 110}px;background:#9B3B3B"></div></div>
         </div>
         <div class="vb-label">${esc(b.label)}</div>
       </div>`).join('')}</div>
-    <div class="vb-legend"><span><i style="background:#5C7A4F"></i>Zugang (Einkauf/Einlagern)</span><span><i style="background:#9B3B3B"></i>Abgang (getrunken/leer)</span><span>Zahl über dem Balken = Bestand am Periodenende</span></div>
+    <div class="vb-legend"><span><i style="background:#5C7A4F"></i>Zugang (Einkauf/Einlagern)</span><span><i style="background:#9B3B3B"></i>Abgang (getrunken/leer)</span><span>Zahl über dem Balken = Bestand am Periodenende</span><span>Balken antippen = Flaschen anzeigen</span></div>
     <div class="vb-legend"><span>Hinweis: Zugang wird aus Kaufdatum und Ausgelagertem berechnet; bei Nachkäufen wird er auf das letzte Kaufdatum gebucht.</span></div>`;
+  el.querySelectorAll('.vb-bar[data-art]').forEach(bar => bar.addEventListener('click', () => {
+    const bk = buckets.find(x => x.key === bar.closest('.vb-col').dataset.bk);
+    if (!bk) return;
+    const zu = bar.dataset.art === 'zu';
+    showPeriodDetail((zu ? 'Zugang ' : 'Abgang ') + bk.label, zu ? bk.zuRows : bk.abRows);
+  }));
   el.querySelector('#bs-zeit').value = o.zeit;
   el.querySelector('#bs-zeit').addEventListener('change', e => { bestandOpts.zeit = e.target.value; renderBestandChart(); });
 }
