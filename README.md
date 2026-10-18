@@ -1,10 +1,10 @@
 # Holgers Keller – Whisky, Spirituosen & Wein
 
-Fork der Cantina Claudia. Ohne Etiketten-Scan und Wunschliste, dafür mit Spirituosen (Füllstand in 0,1-L-Schritten), einfachen Lagerorten, Login und Verkostungsplaner inkl. Story.
+Fork der Cantina Claudia. Mit Etiketten-Fotos und KI-Auslesen, ohne Wunschliste, dazu Spirituosen (Füllstand in 0,1-L-Schritten), einfachen Lagerorten, Login und Verkostungsplaner inkl. Story.
 
 ## Einrichtung (einmalig)
 
-1. **Supabase**: neues Projekt anlegen → *SQL Editor* → Inhalt von `supabase/schema.sql` einfügen und ausführen.
+1. **Supabase**: neues Projekt anlegen → *SQL Editor* → nacheinander `supabase/schema.sql` und `supabase/update_etiketten.sql` (Etiketten-Fotos) und `supabase/update_aromen_preis.sql` (Aromen + Marktpreis) einfügen und ausführen.
 2. **Benutzer**: *Authentication → Users → Add user* (E-Mail + Passwort) für Holger und für dich anlegen (Haken „Auto Confirm User“ setzen).
    Danach *Authentication → Sign In / Providers → Email*: „Allow new users to sign up“ **ausschalten**.
 3. **config.js**: `SUPABASE_URL` und `SUPABASE_ANON_KEY` eintragen (*Project Settings → API*).
@@ -14,6 +14,11 @@ Fork der Cantina Claudia. Ohne Etiketten-Scan und Wunschliste, dafür mit Spirit
    - optional `ANTHROPIC_MODEL` (Standard: `claude-sonnet-5-5`)
    Danach einmal neu deployen.
 5. **Deployment Protection**: Holger hat keinen Vercel-Account. Unter *Settings → Deployment Protection* die Production-Domain **nicht** hinter Vercel-Login legen – der Schutz läuft über den App-Login.
+
+## Aromen, Marktpreis & Sortierung
+
+- **Aromen**: werden beim Etikett-Auslesen übernommen, wenn sie auf dem Etikett stehen („laut Hersteller“). „🔎 Preis & Aromen im Internet suchen“ nutzt die Websuche von Claude (in der Anthropic Console unter *Einstellungen → Datenschutz → Websuche* aktivieren). „✨ Profil vorschlagen (KI)“ liefert eine Einschätzung ohne Quelle und wird als „KI-Vermutung“ gekennzeichnet.
+- **Marktpreis** steht getrennt vom Kaufpreis (mit Datum und Quelle). Sortierung nach Preis nimmt den Marktpreis, falls vorhanden, sonst den Kaufpreis; Flaschen ohne Preis stehen am Ende.
 
 ## Installieren auf dem Handy
 

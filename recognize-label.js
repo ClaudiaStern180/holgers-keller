@@ -51,7 +51,8 @@ Antworte AUSSCHLIESSLICH mit gültigem JSON, ohne Markdown und ohne Text davor o
   "trink_ab": Jahr (nur Wein, nur wenn eine seriöse Einschätzung möglich ist, sonst null),
   "trink_bis": Jahr (nur Wein, sonst null),
   "lagerpotenzial": "... (nur Wein, kurz, sonst null)",
-  "geschaetzter_preis": Zahl in Euro (grobe Schätzung für eine Flasche, sonst null)
+  "geschaetzter_preis": Zahl in Euro (grobe Schätzung für eine Flasche, sonst null),
+  "aromen": "Geschmacks-/Aromaangaben des Herstellers, NUR wenn sie auf Etikett oder Verpackung wörtlich genannt werden (z. B. 'Toffee, Leder, Rauch, Vanille'), als kurze Komma-Liste auf Deutsch; sonst null"
 }`
     });
 

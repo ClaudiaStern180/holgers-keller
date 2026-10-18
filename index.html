@@ -62,6 +62,12 @@
         </select>
         <select id="filter-kat"></select>
         <select id="filter-ort"></select>
+        <select id="sort-by" title="Sortierung">
+          <option value="">↕ Standard</option>
+          <option value="preis-desc">↕ Preis hoch → niedrig</option>
+          <option value="preis-asc">↕ Preis niedrig → hoch</option>
+          <option value="name">↕ Name A–Z</option>
+        </select>
       </div>
       <div id="bottle-grid"></div>
     </section>
@@ -171,11 +177,20 @@
           <label class="fld span2"><span>Lagerort</span><select name="location_id" id="bf-ort"></select></label>
           <label class="fld"><span>Kaufdatum</span><input name="kaufdatum" type="date" /></label>
           <label class="fld"><span>Kaufpreis (€ pro Flasche)</span><input name="kaufpreis" type="number" step="0.01" inputmode="decimal" /></label>
+          <label class="fld"><span>Marktpreis (€, aktuell)</span><input name="marktpreis" type="number" step="0.01" inputmode="decimal" /></label>
+          <div class="span2 hint" id="marktpreis-info" style="margin:-6px 0 0"></div>
           <label class="fld span2"><span>Händler / Bezugsquelle</span><input name="haendler" /></label>
           <label class="fld only-wein"><span>Trinkfenster ab (Jahr)</span><input name="trink_ab" type="number" inputmode="numeric" /></label>
           <label class="fld only-wein"><span>Trinkfenster bis (Jahr)</span><input name="trink_bis" type="number" inputmode="numeric" /></label>
           <label class="fld only-wein span2"><span>Lagerpotenzial laut Hersteller</span><input name="lagerpotenzial" /></label>
         </div>
+        <label class="fld"><span id="lbl-aromen">Aromen</span><textarea name="aromen" rows="2" placeholder="z. B. Toffee, Leder, Rauch, Vanille"></textarea></label>
+        <div class="btn-row" style="margin:-4px 0 14px">
+          <button type="button" id="btn-lookup-web" class="btn-primary btn-dark" style="flex:1">🔎 Preis &amp; Aromen im Internet suchen</button>
+          <button type="button" id="btn-lookup-profil" class="btn-primary btn-green" style="flex:1">✨ Profil vorschlagen (KI)</button>
+        </div>
+        <div id="lookup-status" class="hint" style="margin:-6px 0 14px"></div>
+        <input type="hidden" name="aromen_quelle" /><input type="hidden" name="marktpreis_datum" /><input type="hidden" name="marktpreis_quelle" />
         <label class="fld"><span>Notizen</span><textarea name="notizen"></textarea></label>
         <button type="submit" class="btn-primary">Speichern</button>
       </form>

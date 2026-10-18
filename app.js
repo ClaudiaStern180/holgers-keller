@@ -205,6 +205,15 @@ function sizeBadge(b) {
   return Math.abs(Number(b.flaschengroesse_l) - std) > 1e-9 ? `<span class="size-badge">${fmtL(b.flaschengroesse_l)}</span>` : '';
 }
 
+const preisWert = b => (b.marktpreis != null ? Number(b.marktpreis) : (b.kaufpreis != null ? Number(b.kaufpreis) : null));
+const eur = v => Number(v).toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const QUELLEN = { hersteller: 'laut Hersteller', web: 'aus dem Internet', ki: 'KI-Vermutung', eigen: 'eigene Angabe' };
+function preisHtml(b) {
+  if (b.marktpreis != null) return `ca. € ${eur(b.marktpreis)}`;
+  if (b.kaufpreis != null) return '€ ' + eur(b.kaufpreis);
+  return '';
+}
+
 function cardHtml(b) {
   const spirit = isSpirit(b);
   const inFlight = flightIds.includes(b.id);
@@ -231,7 +240,7 @@ function cardHtml(b) {
     <div class="bottle-meta">📍 ${esc(locName(b.location_id) || 'Kein Lagerort')}</div>
     <div class="bottle-foot">
       <span style="color:var(--muted)">${spirit ? '' : b.anzahl + '× Flasche' + (b.anzahl > 1 ? 'n' : '')}</span>
-      <span style="font-weight:600">${b.kaufpreis != null ? '€ ' + b.kaufpreis : ''}</span>
+      <span style="font-weight:600">${preisHtml(b)}</span>
     </div>
   </div>`;
 }
@@ -247,13 +256,31 @@ function renderCellar() {
     if (ort === '__none' && b.location_id) return false;
     if (ort && ort !== '__none' && b.location_id !== ort) return false;
     if (search) {
-      const fields = [b.name, b.produzent, b.region, b.land, b.fassart, b.kategorie, ...(b.rebsorten || [])];
+      const fields = [b.name, b.produzent, b.region, b.land, b.fassart, b.kategorie, b.aromen, ...(b.rebsorten || [])];
       if (!fields.filter(Boolean).some(f => f.toLowerCase().includes(search))) return false;
     }
     return true;
   });
 
   const grid = $('bottle-grid');
+  const sortMode = $('sort-by').value;
+  if (filtered.length && sortMode) {
+    const list = [...filtered];
+    const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+    if (sortMode === 'name') list.sort(byName);
+    else {
+      const dir = sortMode === 'preis-asc' ? 1 : -1;
+      list.sort((a, b) => {
+        const pa = preisWert(a), pb = preisWert(b);
+        if (pa == null && pb == null) return byName(a, b);
+        if (pa == null) return 1;   // ohne Preis immer ans Ende
+        if (pb == null) return -1;
+        return (pa - pb) * dir || byName(a, b);
+      });
+    }
+    grid.innerHTML = `<div class="bottle-grid">${list.map(cardHtml).join('')}</div>`;
+    return;
+  }
   if (!filtered.length) {
     grid.innerHTML = `<div style="text-align:center;padding:40px;color:#A6926A">${allBottles.some(b => b.anzahl > 0) ? 'Nichts gefunden.' : 'Noch nichts eingelagert – oben auf „+ Einlagern“ tippen.'}</div>`;
     return;
@@ -305,6 +332,7 @@ $('search').addEventListener('input', renderCellar);
 $('filter-haupt').addEventListener('change', () => { updateFilterOptions(); renderCellar(); });
 $('filter-kat').addEventListener('change', renderCellar);
 $('filter-ort').addEventListener('change', renderCellar);
+$('sort-by').addEventListener('change', renderCellar);
 
 // ---------- Detailansicht ----------
 function detailRows(rows) {
@@ -314,20 +342,23 @@ window.showDetail = function (id) {
   const b = bottleById(id);
   if (!b) return;
   const spirit = isSpirit(b);
-  const preis = b.kaufpreis != null ? '€ ' + b.kaufpreis : null;
+  const preis = b.kaufpreis != null ? '€ ' + eur(b.kaufpreis) : null;
+  const markt = b.marktpreis != null
+    ? `€ ${eur(b.marktpreis)}${b.marktpreis_datum ? ' (Stand ' + new Date(b.marktpreis_datum).toLocaleDateString('de-DE') + ')' : ''}${b.marktpreis_quelle && b.marktpreis_quelle !== 'eigen' ? ' · ' + b.marktpreis_quelle : ''}`
+    : null;
   const rows = spirit ? [
     ['Destillerie/Marke', b.produzent], ['Land / Region', [b.land, b.region].filter(Boolean).join(' · ')],
     ['Alter', b.alter_jahre ? b.alter_jahre + ' Jahre' : null], ['Jahr', b.jahrgang],
     ['Fassart', b.fassart], ['Alkohol', b.alkoholgehalt ? b.alkoholgehalt + ' %' : null],
     ['Flaschengröße', fmtL(b.flaschengroesse_l)], ['Lagerort', locName(b.location_id)],
-    ['Kaufpreis', preis], ['Kaufdatum', b.kaufdatum], ['Händler', b.haendler]
+    ['Kaufpreis', preis], ['Marktpreis', markt], ['Kaufdatum', b.kaufdatum], ['Händler', b.haendler]
   ] : [
     ['Weingut', b.produzent], ['Jahrgang', b.jahrgang],
     ['Rebsorte', (b.rebsorten || []).join(', ')], ['Land / Region', [b.land, b.region].filter(Boolean).join(' · ')],
     ['Lage', b.appellation], ['Alkohol', b.alkoholgehalt ? b.alkoholgehalt + ' %' : null],
     ['Trinkfenster', b.trink_ab || b.trink_bis ? `${b.trink_ab || '?'} – ${b.trink_bis || '?'}` : null], ['Lagerpotenzial', b.lagerpotenzial],
     ['Lagerort', locName(b.location_id)], ['Anzahl', String(b.anzahl)], ['Flaschengröße', fmtL(b.flaschengroesse_l)],
-    ['Kaufpreis', preis], ['Kaufdatum', b.kaufdatum], ['Händler', b.haendler]
+    ['Kaufpreis', preis], ['Marktpreis', markt], ['Kaufdatum', b.kaufdatum], ['Händler', b.haendler]
   ];
   const leer = b.anzahl <= 0;
   const vorne = photoOf(b, 'etikett'), hinten = photoOf(b, 'rueckseite');
@@ -345,6 +376,7 @@ window.showDetail = function (id) {
     <div>${pill(b.kategorie, color(b))}${leer ? pill('Verbraucht', '#8A7B5E') : (!spirit ? (() => { const s = trinkStatus(b); return pill(s.label, s.farbe); })() : '')}</div>
     ${spirit && !leer ? `<div style="margin-top:10px">${fillHtml(b)}</div>` : ''}
     <div class="detail-grid">${detailRows(rows)}</div>
+    ${b.aromen ? `<div class="note-box"><b>Aromen${b.aromen_quelle && QUELLEN[b.aromen_quelle] ? ' (' + QUELLEN[b.aromen_quelle] + ')' : ''}:</b> ${esc(b.aromen)}</div>` : ''}
     ${b.notizen ? `<div class="note-box"><b>Notizen:</b> ${esc(b.notizen)}</div>` : ''}
     ${fotos}
     <div class="btn-row">
@@ -499,6 +531,7 @@ function applyScan(r) {
   fill('land', r.land); fill('region', r.region); fill('appellation', r.appellation); fill('fassart', r.fassart);
   fill('alkoholgehalt', r.alkoholgehalt); fill('trink_ab', r.trink_ab); fill('trink_bis', r.trink_bis);
   fill('lagerpotenzial', r.lagerpotenzial);
+  if (r.aromen && !el.aromen.value) { el.aromen.value = r.aromen; el.aromen_quelle.value = 'hersteller'; updateAromenLabel(); }
   const vol = num(r.flaschengroesse_l);
   if (vol && vol > 0 && vol <= 6) {
     const wasFull = $('bf-fuellstand').selectedIndex <= 0;
@@ -536,6 +569,67 @@ $('btn-ki-scan').addEventListener('click', async () => {
   }
 });
 
+// ---------- Aromen & Marktpreis ----------
+function updateAromenLabel() {
+  const q = $('form-bottle').elements.aromen_quelle.value;
+  $('lbl-aromen').textContent = 'Aromen' + (q && QUELLEN[q] ? ` (${QUELLEN[q]})` : '');
+}
+function updateMarktInfo() {
+  const el = $('form-bottle').elements;
+  const d = el.marktpreis_datum.value, q = el.marktpreis_quelle.value;
+  $('marktpreis-info').textContent = el.marktpreis.value && (d || q)
+    ? `Stand ${d ? new Date(d).toLocaleDateString('de-DE') : '–'}${q && q !== 'eigen' ? ' · Quelle: ' + q : ' · eigene Angabe'}`
+    : '';
+}
+$('form-bottle').elements.aromen.addEventListener('input', () => { $('form-bottle').elements.aromen_quelle.value = 'eigen'; updateAromenLabel(); });
+$('form-bottle').elements.marktpreis.addEventListener('input', () => {
+  const el = $('form-bottle').elements;
+  el.marktpreis_datum.value = heute(); el.marktpreis_quelle.value = 'eigen'; updateMarktInfo();
+});
+
+async function lookupInfo(modus) {
+  const f = $('form-bottle'), el = f.elements;
+  const name = el.name.value.trim();
+  if (!name) { alert('Bitte zuerst einen Namen eintragen (oder das Etikett auslesen).'); return; }
+  const status = $('lookup-status');
+  const btns = [$('btn-lookup-web'), $('btn-lookup-profil')];
+  status.textContent = modus === 'web' ? '⏳ Suche im Internet … das kann bis zu einer halben Minute dauern.' : '⏳ Profil wird erstellt …';
+  btns.forEach(b => b.disabled = true);
+  try {
+    const flasche = {
+      name, kategorie: el.kategorie.value, produzent: el.produzent.value, jahrgang: el.jahrgang.value,
+      alter_jahre: el.alter_jahre.value, fassart: el.fassart.value, land: el.land.value, region: el.region.value,
+      alkoholgehalt: el.alkoholgehalt.value, flaschengroesse_l: el.flaschengroesse_l.value
+    };
+    const res = await fetch('/api/lookup-info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ modus, flasche })
+    });
+    const r = await res.json().catch(() => ({ error: 'Serverfehler (' + res.status + ')' }));
+    if (!res.ok || r.error) throw new Error(r.error || 'Fehler ' + res.status);
+    const got = [];
+    if (r.preis_eur != null) {
+      el.marktpreis.value = r.preis_eur; el.marktpreis_datum.value = heute(); el.marktpreis_quelle.value = r.preis_quelle || 'Internet';
+      updateMarktInfo(); got.push('Preis');
+    }
+    if (r.aromen) {
+      const has = el.aromen.value.trim();
+      if (!has || confirm('Vorhandene Aromen durch die neue Angabe ersetzen?\n\n' + has)) {
+        el.aromen.value = r.aromen; el.aromen_quelle.value = r.aromen_quelle || 'ki'; updateAromenLabel(); got.push('Aromen');
+      }
+    }
+    status.textContent = got.length ? `✓ ${got.join(' und ')} eingetragen – bitte kurz prüfen.` : 'Nichts Verlässliches gefunden.';
+  } catch (err) {
+    console.error(err);
+    status.textContent = '⚠️ ' + err.message;
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+$('btn-lookup-web').addEventListener('click', () => lookupInfo('web'));
+$('btn-lookup-profil').addEventListener('click', () => lookupInfo('profil'));
+
 // Nur Dateien löschen, auf die keine Flasche mehr verweist
 async function removeUnreferenced(paths) {
   const gone = [];
@@ -570,6 +664,7 @@ function openBottleForm(b) {
   form.reset();
   ['preview-vorne', 'preview-hinten'].forEach(id => $(id).classList.add('hidden'));
   $('ki-status').textContent = '';
+  $('lookup-status').textContent = '';
   form.elements.kaufpreis.placeholder = '';
   $('photo-edit-hint').classList.toggle('hidden', !b || !(b.bottle_photos || []).length);
   editingBottleId = b ? b.id : null;
@@ -602,7 +697,13 @@ function openBottleForm(b) {
     el.trink_bis.value = b.trink_bis ?? '';
     el.lagerpotenzial.value = b.lagerpotenzial || '';
     el.notizen.value = b.notizen || '';
+    el.marktpreis.value = b.marktpreis ?? '';
+    el.marktpreis_datum.value = b.marktpreis_datum || '';
+    el.marktpreis_quelle.value = b.marktpreis_quelle || '';
+    el.aromen.value = b.aromen || '';
+    el.aromen_quelle.value = b.aromen_quelle || '';
   }
+  updateAromenLabel(); updateMarktInfo();
   openModal('modal-bottle');
 }
 $('btn-add-bottle').addEventListener('click', () => openBottleForm(null));
@@ -637,6 +738,11 @@ $('form-bottle').addEventListener('submit', async e => {
     kaufpreis: num(f.get('kaufpreis')),
     haendler: f.get('haendler') || null,
     notizen: f.get('notizen') || null,
+    marktpreis: num(f.get('marktpreis')),
+    marktpreis_datum: num(f.get('marktpreis')) != null ? (f.get('marktpreis_datum') || heute()) : null,
+    marktpreis_quelle: num(f.get('marktpreis')) != null ? (f.get('marktpreis_quelle') || 'eigen') : null,
+    aromen: (f.get('aromen') || '').trim() || null,
+    aromen_quelle: (f.get('aromen') || '').trim() ? (f.get('aromen_quelle') || 'eigen') : null,
     rebsorten: wein && f.get('rebsorte') ? f.get('rebsorte').split(',').map(s => s.trim()).filter(Boolean) : null,
     appellation: wein ? (f.get('appellation') || null) : null,
     trink_ab: wein ? num(f.get('trink_ab')) : null,
