@@ -46,6 +46,7 @@
     <button class="tab" data-tab="stats">Statistiken</button>
     <button class="tab" data-tab="tastings">Verkostungsnotizen</button>
     <button class="tab" data-tab="flight">Verkostung planen</button>
+    <button class="tab" data-tab="einkauf">🛒 Einkaufsliste</button>
     <button class="tab" data-tab="archiv">🗂 Archiv</button>
   </nav>
 
@@ -132,7 +133,20 @@
     <!-- ARCHIV -->
     <section id="view-archiv" class="view">
       <div class="section-header"><h2>Archiv – Verbrauchtes</h2></div>
+      <div class="toolbar">
+        <select id="archiv-group">
+          <option value="">▦ Protokoll nach Datum</option>
+          <option value="anlass">▦ Nach Verkostungsgrund</option>
+        </select>
+      </div>
       <div id="archiv-list"></div>
+    </section>
+
+    <!-- EINKAUFSLISTE -->
+    <section id="view-einkauf" class="view">
+      <div class="section-header"><h2>Einkaufsliste</h2></div>
+      <p class="hint" style="margin-bottom:16px">Flaschen, die du nachkaufen möchtest – hinzufügen über das Archiv („📝 Einkaufsliste“).</p>
+      <div id="einkauf-list"></div>
     </section>
 
   </main>
@@ -200,6 +214,32 @@
   <!-- MODAL: Detail -->
   <div id="modal-detail" class="modal hidden">
     <div class="modal-content" id="modal-detail-content"></div>
+  </div>
+
+  <!-- MODAL: Wieder einkaufen -->
+  <div id="modal-restock" class="modal hidden">
+    <div class="modal-content" style="max-width:420px">
+      <button class="modal-close" data-close="modal-restock">&times;</button>
+      <h2>🛒 Wieder einkaufen</h2>
+      <div id="restock-name" class="hint" style="margin-bottom:12px"></div>
+      <label class="fld"><span>Anzahl Flaschen</span><input id="restock-qty" type="number" min="1" value="1" /></label>
+      <label class="fld"><span>Lagerort</span><select id="restock-loc"></select></label>
+      <label class="fld"><span>Kaufpreis pro Flasche (optional)</span><input id="restock-preis" type="number" step="0.01" min="0" /></label>
+      <label class="fld"><span>Händler (optional)</span><input id="restock-haendler" /></label>
+      <button id="btn-restock-save" class="btn-primary" style="width:100%">Einlagern</button>
+    </div>
+  </div>
+
+  <!-- MODAL: Verkostungsgrund ändern -->
+  <div id="modal-anlass" class="modal hidden">
+    <div class="modal-content" style="max-width:420px">
+      <button class="modal-close" data-close="modal-anlass">&times;</button>
+      <h2>📌 Verkostungsgrund</h2>
+      <div id="anlass-name" class="hint" style="margin-bottom:12px"></div>
+      <label class="fld"><span>Anlass</span><input id="anlass-input" list="anlass-list" placeholder="z. B. Geburtstag, Abend mit Freunden" /></label>
+      <datalist id="anlass-list"></datalist>
+      <button id="btn-anlass-save" class="btn-primary" style="width:100%">Speichern</button>
+    </div>
   </div>
 
   <!-- MODAL: Füllstand -->

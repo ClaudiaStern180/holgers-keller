@@ -70,6 +70,7 @@ document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', (
   tab.classList.add('active');
   $('view-' + tab.dataset.tab).classList.add('active');
   if (tab.dataset.tab === 'archiv') renderArchiv();
+  if (tab.dataset.tab === 'einkauf') renderEinkauf();
   if (tab.dataset.tab === 'flight') { renderFlightPool(); renderFlightOrder(); loadSavedFlights(); }
 }));
 
@@ -365,7 +366,9 @@ window.showDetail = function (id) {
   const fotos = (vorne || hinten) ? `<div class="detail-photos">${[vorne, hinten].map(p => `<div>${p
     ? `<a href="${photoUrl(p.storage_path)}" target="_blank" rel="noopener"><img src="${photoUrl(p.storage_path)}" alt="Etikett" /></a>`
     : '<span class="hint" style="margin:0">Kein Foto</span>'}</div>`).join('')}</div>` : '';
-  const aktion = leer ? '' : spirit
+  const aktion = leer
+    ? `<button onclick="openRestock('${b.id}')" class="btn-primary btn-green" style="flex:1">🛒 Wieder einkaufen</button>`
+    : spirit
     ? `<button onclick="openFill('${b.id}')" class="btn-primary btn-green" style="flex:1">🥃 Füllstand</button>`
     : `<button onclick="auslagernBottle('${b.id}')" class="btn-primary btn-green" style="flex:1">🍷 Auslagern</button>`;
 
@@ -1358,30 +1361,64 @@ $('story-next').addEventListener('click', () => {
 // ============================================================
 // ARCHIV
 // ============================================================
+function groupByAnlass(items, anlassOf, dateOf) {
+  const map = new Map();
+  items.forEach(it => {
+    const raw = (anlassOf(it) || '').trim();
+    const key = raw.toLowerCase();
+    if (!map.has(key)) map.set(key, { label: raw || 'Ohne Verkostungsgrund', items: [], last: '' });
+    const g = map.get(key); g.items.push(it);
+    const d = dateOf(it) || ''; if (d > g.last) g.last = d;
+  });
+  return [...map.entries()]
+    .sort((x, y) => (x[0] === '') - (y[0] === '') || (y[1].last > x[1].last ? 1 : -1))
+    .map(([, g]) => g);
+}
+
+let einkaufListe = [];
+const aufListe = bottleId => einkaufListe.some(w => w.bottle_id === bottleId);
+async function loadEinkauf() {
+  const { data, error } = await supabaseClient.from('einkaufsliste').select('*').order('created_at', { ascending: false });
+  if (error) { console.error('Einkaufsliste:', error); einkaufListe = []; return false; }
+  einkaufListe = data || [];
+  return true;
+}
+
+let archivLogs = [];
 async function renderArchiv() {
   const { data: logs, error } = await supabaseClient.from('consumption_log').select('*').order('consumed_at', { ascending: false });
   if (error) console.error(error);
+  archivLogs = logs || [];
+  await loadEinkauf();
   const archived = allBottles.filter(b => b.anzahl <= 0);
   const box = $('archiv-list');
 
-  const logHtml = (logs || []).length ? `
+  const logRow = l => {
+    const b = bottleById(l.bottle_id);
+    const menge = l.menge_l != null ? `${fmtL(l.menge_l)} entnommen` : `${l.anzahl}× getrunken`;
+    return `
+    <div class="bottle-card" ${b ? `onclick="showDetail('${b.id}')"` : 'style="cursor:default"'}>
+      <div style="display:flex;justify-content:space-between;gap:10px">
+        <div style="min-width:0">
+          <div style="font-weight:600">${esc(b?.name || '(gelöscht)')} <span style="color:var(--muted);font-weight:400">${b ? '· ' + esc(subline(b)) : ''}</span></div>
+          <div class="bottle-sub" style="cursor:pointer" onclick="event.stopPropagation();editAnlass('${l.id}')">📌 ${l.anlass ? esc(l.anlass) : '<i>Grund ergänzen</i>'} ✏️</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:600">${menge}</div><div class="bottle-sub">${esc(l.consumed_at)}</div></div>
+      </div>
+    </div>`;
+  };
+  const gruppiert = $('archiv-group').value === 'anlass';
+  const logBody = gruppiert
+    ? groupByAnlass(archivLogs, l => l.anlass, l => l.consumed_at).map(g => `
+        <details class="cellar-group" open style="margin-top:12px">
+          <summary class="cellar-group-header" style="cursor:pointer"><span class="cellar-group-title">📌 ${esc(g.label)}<span class="cellar-group-count">${g.items.length} Einträge</span></span></summary>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${g.items.map(logRow).join('')}</div>
+        </details>`).join('')
+    : `<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">${archivLogs.map(logRow).join('')}</div>`;
+  const logHtml = archivLogs.length ? `
     <div class="cellar-group">
       <div class="cellar-group-header" style="cursor:default"><span class="cellar-group-title">Verbrauchsprotokoll</span></div>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-        ${logs.map(l => {
-          const b = bottleById(l.bottle_id);
-          const menge = l.menge_l != null ? `${fmtL(l.menge_l)} entnommen` : `${l.anzahl}× getrunken`;
-          return `
-          <div class="bottle-card" ${b ? `onclick="showDetail('${b.id}')"` : 'style="cursor:default"'}>
-            <div style="display:flex;justify-content:space-between;gap:10px">
-              <div style="min-width:0">
-                <div style="font-weight:600">${esc(b?.name || '(gelöscht)')} <span style="color:var(--muted);font-weight:400">${b ? '· ' + esc(subline(b)) : ''}</span></div>
-                ${l.anlass ? `<div class="bottle-sub">📌 ${esc(l.anlass)}</div>` : ''}
-              </div>
-              <div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:600">${menge}</div><div class="bottle-sub">${esc(l.consumed_at)}</div></div>
-            </div>
-          </div>`; }).join('')}
-      </div>
+      ${logBody}
     </div>` : '';
 
   const doneHtml = archived.length ? `
@@ -1393,12 +1430,123 @@ async function renderArchiv() {
             <div class="bottle-name">${esc(b.name)}${sizeBadge(b)}</div>
             <div class="bottle-sub">${esc(subline(b))}</div>
             <div>${pill(b.kategorie, color(b))}${pill('Verbraucht', '#8A7B5E')}</div>
+            <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
+              <button onclick="event.stopPropagation();addEinkauf('${b.id}')" class="btn-primary small" style="background:#C9A646;color:#3A1F23">📝 ${aufListe(b.id) ? '✓ Auf Liste' : 'Einkaufsliste'}</button>
+              <button onclick="event.stopPropagation();openRestock('${b.id}')" class="btn-primary small btn-green">🛒 Wieder einkaufen</button>
+            </div>
           </div>`).join('')}
       </div>
     </div>` : '';
 
   box.innerHTML = (logHtml + doneHtml) || '<p class="hint">Noch nichts verbraucht.</p>';
 }
+$('archiv-group').addEventListener('change', renderArchiv);
+
+// ---------- Verkostungsgrund nachträglich ändern ----------
+let anlassLogId = null;
+window.editAnlass = function (logId) {
+  const l = archivLogs.find(x => x.id === logId);
+  if (!l) return;
+  anlassLogId = logId;
+  const b = bottleById(l.bottle_id);
+  $('anlass-name').textContent = (b?.name || '–') + ' · ' + l.consumed_at;
+  $('anlass-input').value = l.anlass || '';
+  $('anlass-list').innerHTML = [...new Set(archivLogs.map(x => (x.anlass || '').trim()).filter(Boolean))].map(x => `<option value="${esc(x)}">`).join('');
+  openModal('modal-anlass');
+  setTimeout(() => $('anlass-input').focus(), 50);
+};
+$('btn-anlass-save').addEventListener('click', async () => {
+  const val = $('anlass-input').value.trim() || null;
+  const { error } = await supabaseClient.from('consumption_log').update({ anlass: val }).eq('id', anlassLogId);
+  if (error) { alert('Fehler: ' + error.message); return; }
+  closeModal('modal-anlass');
+  renderArchiv();
+});
+
+// ---------- Einkaufsliste ----------
+window.addEinkauf = async function (bottleId) {
+  const b = bottleById(bottleId);
+  if (!b) return;
+  if (aufListe(bottleId)) { alert(`„${b.name}“ steht schon auf der Einkaufsliste.`); return; }
+  const { error } = await supabaseClient.from('einkaufsliste').insert({
+    bottle_id: b.id, name: b.name, produzent: b.produzent || null, kategorie: b.kategorie || null,
+    jahrgang: b.jahrgang || null, preis_ca: preisWert(b)
+  });
+  if (error) { alert('Fehler: ' + error.message + '\n\nHast du die neue SQL-Datei (einkaufsliste) ausgeführt?'); return; }
+  await loadEinkauf();
+  alert(`„${b.name}“ steht jetzt auf der Einkaufsliste.`);
+  renderArchiv();
+};
+async function renderEinkauf() {
+  await loadEinkauf();
+  $('einkauf-list').innerHTML = einkaufListe.length ? `<div style="display:flex;flex-direction:column;gap:8px">${einkaufListe.map(w => {
+    const b = w.bottle_id ? bottleById(w.bottle_id) : null;
+    const sub = [b ? subline(b) : [w.produzent, w.jahrgang].filter(Boolean).join(' · '), (b?.kategorie || w.kategorie)].filter(Boolean).join(' · ');
+    return `<div class="bottle-card"><div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <div style="min-width:0"><div class="bottle-name">${esc(b?.name || w.name)}</div><div class="bottle-sub">${esc(sub)}</div>
+        ${w.preis_ca != null ? `<div class="bottle-sub">zuletzt ca. € ${eur(w.preis_ca)}</div>` : ''}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn-primary small btn-green" onclick="einkaufGekauft('${w.id}')">🛒 Eingekauft</button>
+        <button class="btn-primary small" style="background:#E7DEC9;color:#9B3B3B" onclick="einkaufEntfernen('${w.id}')">✕</button>
+      </div></div></div>`; }).join('')}</div>`
+    : '<p class="hint">Die Einkaufsliste ist leer.</p>';
+}
+window.einkaufEntfernen = async function (id) {
+  const { error } = await supabaseClient.from('einkaufsliste').delete().eq('id', id);
+  if (error) { alert('Fehler: ' + error.message); return; }
+  renderEinkauf();
+};
+window.einkaufGekauft = function (id) {
+  const w = einkaufListe.find(x => x.id === id);
+  if (w?.bottle_id && bottleById(w.bottle_id)) openRestock(w.bottle_id);
+  else if (confirm('Dieser Eintrag ist keiner Flasche zugeordnet. Von der Liste entfernen?')) einkaufEntfernen(id);
+};
+
+// ---------- Wieder einkaufen ----------
+let restockId = null;
+window.openRestock = function (id) {
+  const b = bottleById(id);
+  if (!b) return;
+  restockId = id;
+  closeModal('modal-detail');
+  $('restock-name').textContent = b.name + (b.jahrgang ? ' · ' + b.jahrgang : '');
+  $('restock-qty').value = 1;
+  $('restock-loc').innerHTML = locationOptionsHtml(b.location_id, 'Kein Lagerort');
+  $('restock-preis').value = b.kaufpreis ?? '';
+  $('restock-haendler').value = b.haendler || '';
+  openModal('modal-restock');
+};
+$('btn-restock-save').addEventListener('click', async () => {
+  const b = bottleById(restockId);
+  if (!b) return;
+  const qty = Math.max(1, parseInt($('restock-qty').value) || 1);
+  const loc = $('restock-loc').value || null;
+  const pr = $('restock-preis').value;
+  const patch = { kaufdatum: heute(), kaufpreis: pr === '' ? null : Number(pr), haendler: $('restock-haendler').value.trim() || null, location_id: loc };
+  const spirit = isSpirit(b);
+  if (spirit) { patch.anzahl = 1; patch.fuellstand_l = b.flaschengroesse_l || null; }
+  else patch.anzahl = (b.anzahl || 0) + qty;
+  const btn = $('btn-restock-save'); btn.disabled = true;
+  try {
+    const { error } = await supabaseClient.from('bottles').update(patch).eq('id', b.id);
+    if (error) throw error;
+    if (spirit && qty > 1) {
+      // jede Spirituosen-Flasche ist ein eigener Eintrag: weitere = Kopien
+      const { id, created_at, bottle_photos, ...rest } = b;
+      const copies = Array.from({ length: Math.min(qty - 1, 49) }, () => ({ ...rest, ...patch }));
+      const { error: e2 } = await supabaseClient.from('bottles').insert(copies);
+      if (e2) throw e2;
+    }
+    await supabaseClient.from('einkaufsliste').delete().eq('bottle_id', b.id);
+    closeModal('modal-restock');
+    await loadBottles();
+    if ($('view-archiv').classList.contains('active')) renderArchiv();
+    if ($('view-einkauf').classList.contains('active')) renderEinkauf();
+    alert(`„${b.name}“ ist wieder im Bestand (${qty}×).`);
+  } catch (e) {
+    alert('Fehler: ' + (e.message || e));
+  } finally { btn.disabled = false; }
+});
 
 // ============================================================
 // START
