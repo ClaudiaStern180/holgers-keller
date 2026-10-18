@@ -981,6 +981,68 @@ async function renderVerbrauch() {
   el.querySelector('#vb-mass').addEventListener('change', e => { verbrauchOpts.mass = e.target.value; renderVerbrauch(); });
 }
 
+// ---------- Bestandsänderung (Zugang / Abgang / Bestand) ----------
+let bestandOpts = { zeit: 'monat12' };
+async function renderBestandChart() {
+  const el = document.getElementById('stat-bestand');
+  if (!el) return;
+  const { data: logs, error } = await supabaseClient.from('consumption_log').select('bottle_id, anzahl, consumed_at');
+  if (error) { el.innerHTML = ''; return; }
+  const byId = Object.fromEntries(allBottles.map(b => [b.id, b]));
+  const abgangLog = (logs || []).filter(l => l.consumed_at && byId[l.bottle_id] && l.anzahl > 0);
+  const verbraucht = {};
+  abgangLog.forEach(l => { verbraucht[l.bottle_id] = (verbraucht[l.bottle_id] || 0) + l.anzahl; });
+  // Zugang: heutiger Bestand + bereits ausgelagerte Flaschen, datiert auf Kaufdatum (sonst Anlagedatum)
+  const events = [];
+  allBottles.forEach(b => {
+    const n = (b.anzahl || 0) + (verbraucht[b.id] || 0);
+    const d = b.kaufdatum || (b.created_at || '').slice(0, 10);
+    if (n > 0 && d) events.push({ d, zu: n, ab: 0 });
+  });
+  abgangLog.forEach(l => events.push({ d: l.consumed_at, zu: 0, ab: l.anzahl }));
+  const o = bestandOpts, now = new Date();
+  const keyOf = o.zeit === 'jahr' ? (d => d.slice(0, 4)) : (d => d.slice(0, 7));
+  const buckets = [];
+  if (o.zeit === 'jahr') {
+    const ys = events.map(e => +e.d.slice(0, 4));
+    for (let y = ys.length ? Math.min(...ys) : now.getFullYear(); y <= now.getFullYear(); y++) buckets.push({ key: String(y), label: String(y) });
+  } else {
+    const n = o.zeit === 'monat24' ? 24 : 12;
+    for (let k = n - 1; k >= 0; k--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - k, 1);
+      buckets.push({ key: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), label: MONATE[d.getMonth()] + (d.getMonth() === 0 || k === n - 1 ? " '" + String(d.getFullYear()).slice(2) : '') });
+    }
+  }
+  let stand = events.filter(e => keyOf(e.d) < buckets[0].key).reduce((s, e) => s + e.zu - e.ab, 0);
+  buckets.forEach(bk => {
+    const ev = events.filter(e => keyOf(e.d) === bk.key);
+    bk.zu = ev.reduce((s, e) => s + e.zu, 0); bk.ab = ev.reduce((s, e) => s + e.ab, 0);
+    stand += bk.zu - bk.ab; bk.stand = stand;
+  });
+  const max = Math.max(...buckets.flatMap(b => [b.zu, b.ab]), 1);
+  const sumZu = buckets.reduce((s, b) => s + b.zu, 0), sumAb = buckets.reduce((s, b) => s + b.ab, 0);
+  const netto = sumZu - sumAb;
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700">Bestandsänderung</div>
+      <select id="bs-zeit"><option value="monat12">Letzte 12 Monate</option><option value="monat24">Letzte 24 Monate</option><option value="jahr">Pro Jahr</option></select>
+    </div>
+    <div class="vb-summary">Im Zeitraum: <b style="color:#5C7A4F">+${sumZu} Zugang</b> · <b style="color:#9B3B3B">−${sumAb} Abgang</b> · Netto <b>${netto >= 0 ? '+' : ''}${netto}</b> · Bestand am Ende: <b>${buckets[buckets.length - 1].stand}</b> Fl.</div>
+    <div class="vb-chart">${buckets.map(b => `
+      <div class="vb-col" title="${esc(b.label)}: +${b.zu} / −${b.ab} · Bestand ${b.stand}">
+        <div class="vb-val" style="font-size:10px">${b.stand}</div>
+        <div class="vb-bar-wrap" style="gap:2px">
+          <div class="vb-bar" style="width:38%;max-width:16px"><div style="height:${(b.zu / max) * 110}px;background:#5C7A4F"></div></div>
+          <div class="vb-bar" style="width:38%;max-width:16px"><div style="height:${(b.ab / max) * 110}px;background:#9B3B3B"></div></div>
+        </div>
+        <div class="vb-label">${esc(b.label)}</div>
+      </div>`).join('')}</div>
+    <div class="vb-legend"><span><i style="background:#5C7A4F"></i>Zugang (Einkauf/Einlagern)</span><span><i style="background:#9B3B3B"></i>Abgang (getrunken/leer)</span><span>Zahl über dem Balken = Bestand am Periodenende</span></div>
+    <div class="vb-legend"><span>Hinweis: Zugang wird aus Kaufdatum und Ausgelagertem berechnet; bei Nachkäufen wird er auf das letzte Kaufdatum gebucht.</span></div>`;
+  el.querySelector('#bs-zeit').value = o.zeit;
+  el.querySelector('#bs-zeit').addEventListener('change', e => { bestandOpts.zeit = e.target.value; renderBestandChart(); });
+}
+
 function renderStats() {
   const stock = allBottles.filter(b => b.anzahl > 0);
   const flaschen = stock.reduce((s, b) => s + b.anzahl, 0);
@@ -1013,6 +1075,7 @@ function renderStats() {
     <div class="stat-card"><div class="label">Spirituosen-Vorrat</div><div class="value">${round2(vorrat).toString().replace('.', ',')} L</div></div>`;
 
   renderVerbrauch();
+  renderBestandChart();
   renderWertTabelle(stock, b => b.kategorie || '–', 'stat-values');
 
   function byField(get) {
