@@ -855,6 +855,122 @@ function showStatDetail(label, bottles) {
   $('view-stats').appendChild(panel);
 }
 
+
+// ---------- Wert nach Kategorie ----------
+// Wert je Flasche: Marktpreis, sonst Kaufpreis; Spirituosen anteilig nach Füllstand.
+// Flaschen ganz ohne Preis: Schätzung mit dem Ø ihrer Kategorie (separat ausgewiesen).
+function renderWertTabelle(stock, katOf, mount) {
+  const el = document.getElementById(mount);
+  if (!el) return;
+  const anteil = b => isSpirit(b) ? Math.min(1, Math.max(0, Number(b.fuellstand_l ?? b.flaschengroesse_l ?? 0) / (Number(b.flaschengroesse_l) || 0.7))) : 1;
+  const pf = b => { const p = preisWert(b); return p != null && p > 0 ? p : null; };
+  const avgOf = list => { const w = list.filter(b => pf(b) != null); const n = w.reduce((s, b) => s + b.anzahl, 0); return n ? w.reduce((s, b) => s + b.anzahl * pf(b), 0) / n : null; };
+  const gesamtAvg = avgOf(stock) || 0;
+  const katAvg = {};
+  stock.forEach(b => { const k = katOf(b); if (!(k in katAvg)) katAvg[k] = avgOf(stock.filter(x => katOf(x) === k)); });
+  const calc = list => {
+    let bekannt = 0, geschaetzt = 0, kauf = 0, n = 0, nOhne = 0;
+    list.forEach(b => {
+      n += b.anzahl; kauf += b.anzahl * (b.kaufpreis || 0) * anteil(b);
+      const p = pf(b);
+      if (p != null) bekannt += b.anzahl * p * anteil(b);
+      else { nOhne += b.anzahl; geschaetzt += b.anzahl * (katAvg[katOf(b)] ?? gesamtAvg) * anteil(b); }
+    });
+    return { n, wert: bekannt + geschaetzt, geschaetzt, nOhne, kauf, avg: avgOf(list) };
+  };
+  const rows = [];
+  [['Wein', stock.filter(b => !isSpirit(b))], ['Spirituosen', stock.filter(isSpirit)]].forEach(([label, list]) => {
+    if (list.length) rows.push({ label: 'Σ ' + label, list, total: true, ...calc(list) });
+  });
+  const kats = [...new Set(stock.map(katOf))];
+  kats.map(k => { const list = stock.filter(b => katOf(b) === k); return { label: k, list, ...calc(list) }; })
+    .sort((a, b) => b.wert - a.wert).forEach(r => rows.push(r));
+  const e0 = v => '€ ' + Math.round(v).toLocaleString('de-DE');
+  const sum = calc(stock);
+  rows.push({ label: 'Gesamt', list: stock, total: true, grand: true, ...sum });
+  el.innerHTML = `<div style="font-size:13px;font-weight:700;margin:6px 0 10px">Wert nach Kategorie</div>
+    <div style="overflow-x:auto"><table class="wert-table">
+      <thead><tr><th>Kategorie</th><th>Fl.</th><th>Bestandswert</th><th>Kaufwert</th><th>Ø Preis</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr data-i="${i}" class="${r.total ? 'wt-total' : ''}">
+        <td>${esc(r.label)}</td><td>${r.n}</td>
+        <td>${e0(r.wert)}${r.nOhne ? `<div class="wt-sub">davon ca. ${e0(r.geschaetzt)} geschätzt (${r.nOhne} Fl. ohne Preis)</div>` : ''}</td>
+        <td>${e0(r.kauf)}</td><td>${r.avg != null ? '€ ' + r.avg.toFixed(2).replace('.', ',') : '–'}</td></tr>`).join('')}</tbody>
+    </table></div>`;
+  el.querySelectorAll('tbody tr').forEach(tr => tr.addEventListener('click', () => {
+    const r = rows[+tr.dataset.i]; showStatDetail(r.label, r.list);
+  }));
+}
+
+// ---------- Verbrauch pro Zeiteinheit ----------
+let verbrauchOpts = { zeit: 'monat12', mass: 'flaschen' };
+const MONATE = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+async function renderVerbrauch() {
+  const el = document.getElementById('stat-verbrauch');
+  if (!el) return;
+  const { data: logs, error } = await supabaseClient.from('consumption_log').select('bottle_id, anzahl, menge_l, consumed_at');
+  if (error) { el.innerHTML = ''; return; }
+  const byId = Object.fromEntries(allBottles.map(b => [b.id, b]));
+  // je Eintrag: Flaschen(-Äquivalent) und Wert
+  const items = (logs || []).filter(l => l.consumed_at && byId[l.bottle_id]).map(l => {
+    const b = byId[l.bottle_id];
+    const sp = isSpirit(b);
+    const fl = sp && l.menge_l != null ? Number(l.menge_l) / (Number(b.flaschengroesse_l) || 0.7) : (l.anzahl || 0);
+    const p = preisWert(b);
+    return { key: l.consumed_at.slice(0, 7), jahr: l.consumed_at.slice(0, 4), sp, fl, wert: p != null ? fl * p : 0 };
+  });
+  const o = verbrauchOpts;
+  const now = new Date();
+  const buckets = [];
+  if (o.zeit === 'jahr') {
+    const years = items.map(i => +i.jahr);
+    const from = years.length ? Math.min(...years) : now.getFullYear();
+    for (let y = from; y <= now.getFullYear(); y++) buckets.push({ key: String(y), label: String(y) });
+  } else {
+    const n = o.zeit === 'monat24' ? 24 : 12;
+    for (let k = n - 1; k >= 0; k--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - k, 1);
+      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      buckets.push({ key, label: MONATE[d.getMonth()] + (d.getMonth() === 0 || k === n - 1 ? " '" + String(d.getFullYear()).slice(2) : '') });
+    }
+  }
+  const val = i => o.mass === 'wert' ? i.wert : i.fl;
+  buckets.forEach(bk => {
+    const its = items.filter(i => (o.zeit === 'jahr' ? i.jahr : i.key) === bk.key);
+    bk.wein = its.filter(i => !i.sp).reduce((s, i) => s + val(i), 0);
+    bk.spirit = its.filter(i => i.sp).reduce((s, i) => s + val(i), 0);
+    bk.sum = bk.wein + bk.spirit;
+  });
+  const total = buckets.reduce((s, b) => s + b.sum, 0);
+  const avg = buckets.length ? total / buckets.length : 0;
+  const max = Math.max(...buckets.map(b => b.sum), 0.0001);
+  const fmt = v => o.mass === 'wert' ? '€ ' + Math.round(v).toLocaleString('de-DE') : (Math.round(v * 10) / 10).toString().replace('.', ',');
+  const einheit = o.zeit === 'jahr' ? 'Jahr' : 'Monat';
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div style="font-size:13px;font-weight:700">Verbrauch pro ${einheit}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select id="vb-zeit"><option value="monat12">Letzte 12 Monate</option><option value="monat24">Letzte 24 Monate</option><option value="jahr">Pro Jahr</option></select>
+        <select id="vb-mass"><option value="flaschen">Flaschen</option><option value="wert">Wert (€)</option></select>
+      </div>
+    </div>
+    <div class="vb-summary">Ø ${fmt(avg)} pro ${einheit} · Summe ${fmt(total)}${o.mass === 'flaschen' ? ' Flaschen' : ''}</div>
+    <div class="vb-chart">${buckets.map(b => `
+      <div class="vb-col" title="${esc(b.label)}: Wein ${fmt(b.wein)} · Spirituosen ${fmt(b.spirit)}">
+        <div class="vb-val">${b.sum > 0 ? fmt(b.sum) : ''}</div>
+        <div class="vb-bar-wrap"><div class="vb-bar">
+          <div style="height:${(b.spirit / max) * 120}px;background:#B7762C"></div>
+          <div style="height:${(b.wein / max) * 120}px;background:#7B2D3E"></div>
+        </div></div>
+        <div class="vb-label">${esc(b.label)}</div>
+      </div>`).join('')}</div>
+    <div class="vb-legend"><span><i style="background:#7B2D3E"></i>Wein</span><span><i style="background:#B7762C"></i>Spirituosen</span>
+      ${o.mass === 'wert' ? '<span>Wert = Marktpreis, sonst Kaufpreis</span>' : '<span>Spirituosen als Flaschen-Äquivalent (Liter ÷ Flaschengröße)</span>'}</div>`;
+  el.querySelector('#vb-zeit').value = o.zeit;
+  el.querySelector('#vb-mass').value = o.mass;
+  el.querySelector('#vb-zeit').addEventListener('change', e => { verbrauchOpts.zeit = e.target.value; renderVerbrauch(); });
+  el.querySelector('#vb-mass').addEventListener('change', e => { verbrauchOpts.mass = e.target.value; renderVerbrauch(); });
+}
+
 function renderStats() {
   const stock = allBottles.filter(b => b.anzahl > 0);
   const flaschen = stock.reduce((s, b) => s + b.anzahl, 0);
@@ -885,6 +1001,9 @@ function renderStats() {
     <div class="stat-card"><div class="label">Ø Preis/Flasche</div><div class="value">€ ${avg}</div>${sub(`über ${nMit} Fl. mit Preis`)}</div>
     <div class="stat-card"><div class="label">Verschiedene</div><div class="value">${stock.length}</div></div>
     <div class="stat-card"><div class="label">Spirituosen-Vorrat</div><div class="value">${round2(vorrat).toString().replace('.', ',')} L</div></div>`;
+
+  renderVerbrauch();
+  renderWertTabelle(stock, b => b.kategorie || '–', 'stat-values');
 
   function byField(get) {
     const map = {};
